@@ -3,7 +3,7 @@ sys.path.append("/usr/local/lib")
 import time
 import pyrealsense2 as rs
 import numpy as np
-# import cv2
+import cv2
 from donkeycar.parts.camera import BaseCamera
 
 
@@ -26,9 +26,13 @@ class RealSenseCamera(BaseCamera):
         frames = self.pipeline.wait_for_frames()
         
         left = frames.get_fisheye_frame(1)
+        right = frames.get_fisheye_frame(2)
         left_frame = np.asanyarray(left.get_data())
-        # frame = cv2.cvtColor(left_frame, cv2.COLOR_GRAY2RGB)
-        return left_frame
+        right_frame = np.asanyarray(right.get_data())
+        left_frame_small = cv2.resize(left_frame, (160, 120))
+        right_frame_small = cv2.resize(right_frame, (160, 120))
+        stereo_frame = np.concatenate((left_frame_small, right_frame_small), axis=1)
+        return stereo_frame
 
 
     def update(self):

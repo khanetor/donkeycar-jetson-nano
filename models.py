@@ -2,7 +2,7 @@ from tensorflow.python.keras.layers import Input, Conv2D, Dropout, Flatten, Dens
 from tensorflow.python.keras.models import Model
 
 
-def default_linear(shape=(800, 848)):
+def default_linear(shape=(120, 2*160)):
     img_in = Input(shape=shape, name='img_in')
     x = img_in
 

@@ -3,8 +3,8 @@
 Scripts to drive a donkey 2 car and train a model for it.
 
 Usage:
-    manage.py (drive) [--model=<model>] [--js] [--chaos]
-    manage.py (train) [--tub=<tub1,tub2,..tubn>]  (--model=<model>) [--base_model=<base_model>] [--no_cache]
+    manage.py (drive) [--model=<model>] [--js] [--chaos] [--type=<linear|linear-dropout|linear-cropped-dropout|rnn>]
+    manage.py (train) [--tub=<tub1,tub2,..tubn>]  (--model=<model>) [--type=<linear|linear-dropout|rnn>] [--base_model=<base_model>] [--no_cache]
 
 Options:
     -h --help        Show this screen.
@@ -22,13 +22,10 @@ from donkeycar.parts.transform import Lambda
 from donkeycar.parts.keras import KerasLinear
 from donkeycar.parts.actuator import PCA9685, PWMSteering, PWMThrottle
 from donkeycar.parts.datastore import TubGroup, TubWriter
-from donkeypart_ps3_controller.part import PS4JoystickController
 from donkeycar.parts.clock import Timestamp
 
-from models import default_linear
 
-
-def drive(cfg, model_path=None, use_chaos=False):
+def drive(cfg, model_path=None, model_type='linear-dropout', use_joystick=False, use_chaos=False):
 
     """
     Construct a working robotic vehicle from many parts.
@@ -49,11 +46,17 @@ def drive(cfg, model_path=None, use_chaos=False):
     cam = RealSenseCamera()
     V.add(cam, outputs=['cam/image_array'], threaded=True)
 
-    # ctr = LocalWebController(use_chaos=use_chaos)
-    ctr = PS4JoystickController(
-            throttle_scale=cfg.JOYSTICK_MAX_THROTTLE,
-            steering_scale=cfg.JOYSTICK_STEERING_SCALE,
-            auto_record_on_throttle=cfg.AUTO_RECORD_ON_THROTTLE)
+    if use_joystick:
+        from donkeypart_ps3_controller.part import PS4JoystickController
+
+        ctr = PS4JoystickController(throttle_scale=cfg.JOYSTICK_MAX_THROTTLE,
+                                    steering_scale=cfg.JOYSTICK_STEERING_SCALE,
+                                    auto_record_on_throttle=cfg.AUTO_RECORD_ON_THROTTLE)
+    else:
+        from donkeycar.parts.web_controller import LocalWebController
+
+        ctr = LocalWebController(use_chaos=use_chaos)
+
     V.add(ctr,
           inputs=['cam/image_array'],
           outputs=['user/angle', 'user/throttle', 'user/mode', 'recording'],
@@ -73,7 +76,7 @@ def drive(cfg, model_path=None, use_chaos=False):
           outputs=['run_pilot'])
 
     # Run the pilot if the mode is not user.
-    kl = KerasLinear(model=default_linear())
+    kl = get_model(model_type) 
     if model_path:
         kl.load(model_path)
 
@@ -132,7 +135,7 @@ def drive(cfg, model_path=None, use_chaos=False):
             max_loop_count=cfg.MAX_LOOPS)
 
 
-def train(cfg, tub_names, new_model_path, base_model_path=None):
+def train(cfg, tub_names, new_model_path, model_type='linear-dropout', base_model_path=None):
     """
     use the specified data in tub_names to train an artifical neural network
     saves the output trained model as model_name
@@ -142,7 +145,7 @@ def train(cfg, tub_names, new_model_path, base_model_path=None):
 
     new_model_path = os.path.expanduser(new_model_path)
 
-    kl = KerasLinear(model=default_linear())
+    kl = get_model(model_type) 
     if base_model_path is not None:
         base_model_path = os.path.expanduser(base_model_path)
         kl.load(base_model_path)
@@ -169,21 +172,39 @@ def train(cfg, tub_names, new_model_path, base_model_path=None):
              train_split=cfg.TRAIN_TEST_SPLIT)
 
 
+def get_model(model_type):
+    if model_type == 'linear':
+        from models import default_linear
+        from donkeycar.parts.keras import KerasLinear
+        return KerasLinear(model=default_linear())
+    elif model_type == 'linear-dropout':
+        from models import linear_dropout
+        from donkeycar.parts.keras import KerasLinear
+        return KerasLinear(model=linear_dropout())
+    elif model_type == 'linear-cropped-dropout':
+        from models import linear_cropped_dropout
+        from donkeycar.parts.keras import KerasLinear
+        return KerasLinear(model=linear_cropped_dropout())
+    elif model_type == 'rnn':
+        from models import KerasRNN_LSTM
+        return KerasRNN_LSTM()
+    else:
+        raise ValueError('Unknown model type')
+
+
 if __name__ == '__main__':
     args = docopt(__doc__)
     cfg = dk.load_config()
 
     if args['drive']:
-        drive(cfg, model_path=args['--model'], use_chaos=args['--chaos'])
+        drive(cfg, model_path=args['--model'], model_type=args['--type'], use_joystick=args['--js'], use_chaos=args['--chaos'])
 
     elif args['train']:
         tub = args['--tub']
         new_model_path = args['--model']
+        model_type=args['--type']
         base_model_path = args['--base_model']
         cache = not args['--no_cache']
-        train(cfg, tub, new_model_path, base_model_path)
-
-
-
+        train(cfg, tub, new_model_path, model_type, base_model_path)
 
 
